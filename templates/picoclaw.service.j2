@@ -1,0 +1,39 @@
+[Unit]
+Description=PicoClaw L1 Mid-Weight AI Agent
+Documentation=https://docs.clawland.ai/agents/picoclaw
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ picoclaw_user }}
+Group={{ picoclaw_group }}
+
+# Binary and config
+ExecStart={{ picoclaw_install_dir }}/picoclaw --config {{ picoclaw_config_dir }}/config.yml
+
+# Working directory
+WorkingDirectory={{ picoclaw_data_dir }}
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=picoclaw
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ picoclaw_data_dir }} {{ picoclaw_log_dir }}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,230 @@
+---
+# Ansible playbook for single-node PicoClaw deployment
+# Supports RISC-V and ARM boards (Raspberry Pi 5, StarFive VisionFive 2, etc.)
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/deploy-picoclaw.yml
+
+- name: Deploy PicoClaw (L1 Mid-Weight AI Agent)
+  hosts: picoclaw_nodes
+  become: true
+  vars:
+    picoclaw_version: "0.1.0"
+    picoclaw_user: "picoclaw"
+    picoclaw_group: "picoclaw"
+    picoclaw_install_dir: "/opt/picoclaw"
+    picoclaw_config_dir: "/etc/picoclaw"
+    picoclaw_data_dir: "/var/lib/picoclaw"
+    picoclaw_log_dir: "/var/log/picoclaw"
+    picoclaw_binary_url: "https://github.com/Clawland-AI/PicoClaw/releases/download/v{{ picoclaw_version }}/picoclaw-linux-{{ ansible_architecture }}"
+    picoclaw_port: 8080
+    moltclaw_url: "https://moltclaw.clawland.ai"  # L3 cloud coordinator
+    go_version: "1.22.0"  # Required if building from source
+    
+  tasks:
+    # ========== Pre-flight Checks ==========
+    - name: Display deployment target information
+      debug:
+        msg: |
+          Deploying PicoClaw v{{ picoclaw_version }} to {{ inventory_hostname }}
+          Architecture: {{ ansible_architecture }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+    
+    - name: Verify target architecture
+      assert:
+        that:
+          - ansible_architecture in ['aarch64', 'riscv64', 'armv7l']
+        fail_msg: "Unsupported architecture: {{ ansible_architecture }}. PicoClaw requires ARM or RISC-V."
+    
+    # ========== System Dependencies ==========
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+    
+    - name: Install system dependencies
+      apt:
+        name:
+          - curl
+          - wget
+          - ca-certificates
+          - ufw
+          - systemd
+        state: present
+    
+    # ========== Go Runtime (Optional - for building from source) ==========
+    - name: Check if Go is already installed
+      command: go version
+      register: go_check
+      ignore_errors: true
+      changed_when: false
+    
+    - name: Install Go runtime
+      when: go_check.rc != 0
+      block:
+        - name: Download Go tarball
+          get_url:
+            url: "https://go.dev/dl/go{{ go_version }}.linux-{{ 'arm64' if ansible_architecture == 'aarch64' else ansible_architecture }}.tar.gz"
+            dest: "/tmp/go{{ go_version }}.tar.gz"
+            mode: '0644'
+        
+        - name: Extract Go tarball
+          unarchive:
+            src: "/tmp/go{{ go_version }}.tar.gz"
+            dest: "/usr/local"
+            remote_src: yes
+        
+        - name: Add Go to PATH
+          lineinfile:
+            path: /etc/profile.d/go.sh
+            line: 'export PATH=$PATH:/usr/local/go/bin'
+            create: yes
+            mode: '0644'
+    
+    # ========== Create PicoClaw User & Directories ==========
+    - name: Create PicoClaw system user
+      user:
+        name: "{{ picoclaw_user }}"
+        system: yes
+        create_home: no
+        shell: /usr/sbin/nologin
+        comment: "PicoClaw L1 Agent Service User"
+    
+    - name: Create PicoClaw directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ picoclaw_user }}"
+        group: "{{ picoclaw_group }}"
+        mode: '0755'
+      loop:
+        - "{{ picoclaw_install_dir }}"
+        - "{{ picoclaw_config_dir }}"
+        - "{{ picoclaw_data_dir }}"
+        - "{{ picoclaw_log_dir }}"
+    
+    # ========== Download PicoClaw Binary ==========
+    - name: Download PicoClaw binary
+      get_url:
+        url: "{{ picoclaw_binary_url }}"
+        dest: "{{ picoclaw_install_dir }}/picoclaw"
+        mode: '0755'
+        owner: "{{ picoclaw_user }}"
+        group: "{{ picoclaw_group }}"
+      register: picoclaw_download
+      ignore_errors: true
+    
+    # Fallback: Build from source if binary not available
+    - name: Build PicoClaw from source (fallback)
+      when: picoclaw_download.failed
+      block:
+        - name: Clone PicoClaw repository
+          git:
+            repo: "https://github.com/Clawland-AI/PicoClaw.git"
+            dest: "/tmp/picoclaw-build"
+            version: "v{{ picoclaw_version }}"
+        
+        - name: Build PicoClaw binary
+          shell: |
+            export PATH=$PATH:/usr/local/go/bin
+            cd /tmp/picoclaw-build
+            go build -o {{ picoclaw_install_dir }}/picoclaw ./cmd/picoclaw
+          args:
+            creates: "{{ picoclaw_install_dir }}/picoclaw"
+        
+        - name: Set binary ownership
+          file:
+            path: "{{ picoclaw_install_dir }}/picoclaw"
+            owner: "{{ picoclaw_user }}"
+            group: "{{ picoclaw_group }}"
+            mode: '0755'
+    
+    # ========== Deploy Configuration ==========
+    - name: Deploy PicoClaw configuration
+      template:
+        src: templates/picoclaw-config.yml.j2
+        dest: "{{ picoclaw_config_dir }}/config.yml"
+        owner: "{{ picoclaw_user }}"
+        group: "{{ picoclaw_group }}"
+        mode: '0640'
+      notify: restart picoclaw
+    
+    # ========== Set up systemd Service ==========
+    - name: Deploy systemd service file
+      template:
+        src: templates/picoclaw.service.j2
+        dest: /etc/systemd/system/picoclaw.service
+        mode: '0644'
+      notify: restart picoclaw
+    
+    - name: Enable PicoClaw service
+      systemd:
+        name: picoclaw
+        enabled: yes
+        daemon_reload: yes
+    
+    # ========== Configure Firewall (UFW) ==========
+    - name: Enable UFW
+      ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+    
+    - name: Allow SSH (prevent lockout)
+      ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+    
+    - name: Allow PicoClaw HTTP port
+      ufw:
+        rule: allow
+        port: "{{ picoclaw_port }}"
+        proto: tcp
+        comment: "PicoClaw L1 Gateway API"
+    
+    # ========== Start Service & Health Check ==========
+    - name: Start PicoClaw service
+      systemd:
+        name: picoclaw
+        state: started
+    
+    - name: Wait for PicoClaw to start
+      wait_for:
+        port: "{{ picoclaw_port }}"
+        delay: 5
+        timeout: 30
+    
+    - name: Verify PicoClaw health endpoint
+      uri:
+        url: "http://localhost:{{ picoclaw_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health_check
+      retries: 3
+      delay: 5
+    
+    - name: Display deployment success
+      debug:
+        msg: |
+          ✅ PicoClaw deployment successful!
+          
+          Health check: {{ health_check.json }}
+          
+          Access PicoClaw:
+            API: http://{{ ansible_default_ipv4.address }}:{{ picoclaw_port }}
+            Health: http://{{ ansible_default_ipv4.address }}:{{ picoclaw_port }}/healthz
+          
+          View logs:
+            sudo journalctl -u picoclaw -f
+          
+          Manage service:
+            sudo systemctl status picoclaw
+            sudo systemctl restart picoclaw
+  
+  handlers:
+    - name: restart picoclaw
+      systemd:
+        name: picoclaw
+        state: restarted
+        daemon_reload: yes
