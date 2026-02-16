@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  picclaw:
+    image: ghcr.io/clawland-ai/picclaw:latest
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    environment:
+      - PICCLAW_PORT=9090
+    volumes:
+      - picclaw-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  moltclaw:
+    image: ghcr.io/clawland-ai/moltclaw:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  picclaw-data:
