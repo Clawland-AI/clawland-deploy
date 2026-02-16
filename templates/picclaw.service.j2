@@ -1,0 +1,14 @@
+[Unit]
+Description=PicoClaw Edge AI Agent
+After=network.target
+
+[Service]
+Type=simple
+User={{ picclaw_user }}
+ExecStart=/usr/local/bin/picclaw --port {{ picclaw_port }}
+Restart=always
+RestartSec=5
+Environment=PICCLAW_PORT={{ picclaw_port }}
+
+[Install]
+WantedBy=multi-user.target
