@@ -1,0 +1,47 @@
+---
+- name: Deploy PicoClaw Edge Agent
+  hosts: edge_nodes
+  become: true
+  vars:
+    picclaw_version: "0.1.0"
+    picclaw_port: 9090
+    picclaw_user: picclaw
+
+  tasks:
+    - name: Create picclaw user
+      ansible.builtin.user:
+        name: "{{ picclaw_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+
+    - name: Download picclaw binary
+      ansible.builtin.get_url:
+        url: "https://github.com/Clawland-AI/picclaw/releases/download/v{{ picclaw_version }}/picclaw-linux-{{ ansible_architecture }}"
+        dest: /usr/local/bin/picclaw
+        mode: '0755'
+
+    - name: Create config directory
+      ansible.builtin.file:
+        path: /etc/picclaw
+        state: directory
+        owner: "{{ picclaw_user }}"
+        mode: '0755'
+
+    - name: Deploy systemd service
+      ansible.builtin.template:
+        src: templates/picclaw.service.j2
+        dest: /etc/systemd/system/picclaw.service
+      notify: restart picclaw
+
+    - name: Enable and start picclaw
+      ansible.builtin.systemd:
+        name: picclaw
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: restart picclaw
+      ansible.builtin.systemd:
+        name: picclaw
+        state: restarted
