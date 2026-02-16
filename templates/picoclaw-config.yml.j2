@@ -1,0 +1,53 @@
+# PicoClaw configuration
+# This file is deployed to /etc/picoclaw/config.yml by Ansible
+
+server:
+  host: "0.0.0.0"
+  port: {{ picoclaw_port }}
+  
+agent:
+  name: "picoclaw-{{ inventory_hostname }}"
+  version: "{{ picoclaw_version }}"
+  layer: "L1"  # Mid-weight edge agent
+
+moltclaw:
+  # L3 cloud coordinator endpoint
+  url: "{{ moltclaw_url }}"
+  api_key: "{{ picoclaw_api_key | default('') }}"  # Set in inventory host_vars
+  
+  # Upload interval for batched data
+  upload_interval: 300  # 5 minutes
+  
+nanoclaw:
+  # Upstream L2 regional gateway (if available)
+  enabled: {{ nanoclaw_enabled | default(false) }}
+  url: "{{ nanoclaw_url | default('') }}"
+
+microclaw:
+  # Downstream L0 sensor nodes
+  # PicoClaw receives MQTT messages from MicroClaw nodes
+  mqtt:
+    broker: "0.0.0.0"
+    port: 1883
+    topics:
+      - "clawland/+/sensors/#"  # Subscribe to all MicroClaw sensor data
+
+data:
+  storage_path: "{{ picoclaw_data_dir }}"
+  retention_days: 7  # Keep local data for 7 days
+
+logging:
+  level: "info"  # debug, info, warn, error
+  file: "{{ picoclaw_log_dir }}/picoclaw.log"
+  max_size: 100  # MB
+  max_backups: 3
+
+features:
+  # Model inference on device (requires model files)
+  inference_enabled: false
+  
+  # Local decision engine
+  decision_engine_enabled: false
+  
+  # LoRa gateway (for remote MicroClaw nodes)
+  lora_enabled: false

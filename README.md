@@ -1,111 +1,321 @@
-# clawland-deploy
+# 🍇 Clawland Deploy — Infrastructure Automation
 
-One-click deployment tools for the Clawland edge AI ecosystem.
+**clawland-deploy** provides Ansible playbooks and Docker Compose configurations for deploying the Clawland edge AI agent network (MicroClaw, NanoClaw, PicoClaw, MoltClaw).
 
----
+## Features
 
-## Overview
-
-`clawland-deploy` provides automated deployment recipes for all Claw family agents (picclaw, moltclaw, nanoclaw) across different environments — from a single $10 board to a fleet of hundreds.
-
-## Deployment Methods
-
-| Method | Target | Use Case |
-|--------|--------|----------|
-| **Docker Compose** | Any Linux host | Single-node or dev setup |
-| **Ansible Playbook** | VPS / bare metal | Production multi-node fleet |
-| **Pre-built Images** | SD card flash | Zero-config edge deployment |
-| **systemd Units** | Linux boards | Lightweight daemon setup |
+- ✅ **Ansible playbooks** — automated deployment for all agent layers
+- ✅ **Architecture-aware** — supports ARM, RISC-V, x86_64
+- ✅ **Systemd integration** — auto-start services on boot
+- ✅ **Firewall configuration** — UFW rules for secure edge deployments
+- ✅ **Health checks** — verify deployment success
+- ✅ **Docker Compose** — optional containerized deployment
 
 ## Quick Start
 
-### Docker Compose (Single Node)
+### Prerequisites
+
+**On your control machine:**
 
 ```bash
+# Install Ansible
+pip install ansible
+
+# Clone this repository
 git clone https://github.com/Clawland-AI/clawland-deploy.git
-cd clawland-deploy/docker
-
-# Deploy picclaw edge agent
-docker compose -f picclaw.yml up -d
-
-# Deploy moltclaw cloud gateway
-docker compose -f moltclaw.yml up -d
+cd clawland-deploy
 ```
 
-### Ansible (Fleet Deployment)
+**On target nodes:**
+
+- SSH access with sudo privileges
+- Supported OS: Ubuntu 22.04+, Raspberry Pi OS, Debian 11+
+- Supported architectures: ARM (aarch64, armv7l), RISC-V (riscv64), x86_64
+
+### Deploy PicoClaw (L1 Agent)
+
+#### 1. Configure Inventory
+
+Edit `inventory/hosts.yml` and add your target node:
+
+```yaml
+picoclaw_nodes:
+  hosts:
+    picoclaw-01:
+      ansible_host: 192.168.1.100  # Your Raspberry Pi IP
+      ansible_user: pi
+      ansible_become: yes
+      picoclaw_port: 8080
+      moltclaw_url: "https://moltclaw.clawland.ai"
+```
+
+#### 2. Run Playbook
 
 ```bash
-cd ansible
-
-# Edit inventory with your edge nodes
-vim inventory/hosts.yml
-
-# Deploy picclaw to all edge nodes
-ansible-playbook -i inventory/hosts.yml playbooks/picclaw.yml
-
-# Deploy moltclaw cloud gateway
-ansible-playbook -i inventory/hosts.yml playbooks/moltclaw.yml
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-picoclaw.yml
 ```
 
-### Pre-built Image (SD Card)
+#### 3. Verify Deployment
 
-1. Download the latest image from [Releases](https://github.com/Clawland-AI/clawland-deploy/releases)
-2. Flash to SD card: `dd if=picclaw-licheerv.img of=/dev/sdX bs=4M`
-3. Insert into board, power on — picclaw starts automatically
+```bash
+# SSH to your node
+ssh pi@192.168.1.100
 
-## Directory Structure
+# Check service status
+sudo systemctl status picoclaw
 
-```
-clawland-deploy/
-├── docker/                  # Docker Compose files
-│   ├── picclaw.yml          # Edge agent
-│   ├── moltclaw.yml         # Cloud gateway
-│   ├── nanoclaw.yml         # Mid-weight agent
-│   └── fleet-stack.yml      # Full fleet stack
-├── ansible/                 # Ansible playbooks
-│   ├── inventory/
-│   │   └── hosts.yml        # Node inventory template
-│   ├── playbooks/
-│   │   ├── picclaw.yml      # Deploy picclaw
-│   │   ├── moltclaw.yml     # Deploy moltclaw
-│   │   └── fleet.yml        # Deploy full fleet
-│   └── roles/
-│       ├── common/          # Base OS setup
-│       ├── picclaw/         # picclaw role
-│       └── moltclaw/        # moltclaw role
-├── images/                  # Pre-built image configs
-│   ├── licheerv-nano/       # LicheeRV-Nano image
-│   ├── milkv-duo/           # Milk-V Duo image
-│   └── raspberry-pi/        # Raspberry Pi image
-├── systemd/                 # systemd service units
-│   ├── picclaw.service
-│   └── moltclaw.service
-└── scripts/                 # Helper scripts
-    ├── setup-edge.sh        # One-line edge setup
-    └── setup-cloud.sh       # One-line cloud setup
+# View logs
+sudo journalctl -u picoclaw -f
+
+# Test health endpoint
+curl http://localhost:8080/healthz
 ```
 
-## Supported Hardware
+## Playbooks
 
-| Board | Agent | Image Available |
-|-------|-------|-----------------|
-| LicheeRV-Nano ($10) | picclaw | Planned |
-| Milk-V Duo ($9) | picclaw | Planned |
-| Raspberry Pi 4/5 | nanoclaw / picclaw | Planned |
-| Any x86/ARM Linux | moltclaw | Docker |
-| Cloud VM | moltclaw | Docker / Ansible |
+### deploy-picoclaw.yml
 
-## Related Repositories
+Deploy PicoClaw (L1 mid-weight agent) on Raspberry Pi 5, StarFive VisionFive 2, or similar SBC.
 
-- [picclaw](https://github.com/Clawland-AI/picclaw) — Edge AI Agent
-- [moltclaw](https://github.com/Clawland-AI/moltclaw) — Cloud AI Gateway
-- [clawland-fleet](https://github.com/Clawland-AI/clawland-fleet) — Fleet orchestration
-- [clawland-kits](https://github.com/Clawland-AI/clawland-kits) — Hardware sensor kits
+**What it does:**
+
+- ✅ Installs Go runtime (or uses pre-built binary)
+- ✅ Creates system user and directories
+- ✅ Deploys PicoClaw binary and configuration
+- ✅ Sets up systemd service with auto-restart
+- ✅ Configures UFW firewall
+- ✅ Runs health check verification
+
+**Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `picoclaw_version` | `0.1.0` | PicoClaw release version |
+| `picoclaw_port` | `8080` | HTTP server port |
+| `moltclaw_url` | `https://moltclaw.clawland.ai` | L3 cloud coordinator endpoint |
+| `nanoclaw_enabled` | `false` | Connect to local L2 gateway |
+| `nanoclaw_url` | `` | L2 NanoClaw gateway URL |
+
+**Usage:**
+
+```bash
+# Deploy to all picoclaw_nodes in inventory
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-picoclaw.yml
+
+# Deploy to specific host
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-picoclaw.yml --limit picoclaw-01
+
+# Dry run (check mode)
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-picoclaw.yml --check
+```
+
+### deploy-nanoclaw.yml (TODO)
+
+Deploy NanoClaw (L2 regional gateway) on Raspberry Pi 4/5.
+
+### deploy-microclaw.yml (TODO)
+
+Flash MicroClaw (L0 sensor agent) firmware to ESP32.
+
+### deploy-moltclaw.yml (TODO)
+
+Deploy MoltClaw (L3 cloud coordinator) on cloud VPS or Kubernetes.
+
+## Configuration Templates
+
+### picoclaw-config.yml.j2
+
+Jinja2 template for PicoClaw configuration. Deployed to `/etc/picoclaw/config.yml`.
+
+**Key settings:**
+
+- **Server:** Host and port binding
+- **MoltClaw:** L3 cloud coordinator URL and API key
+- **NanoClaw:** Optional L2 gateway connection
+- **MicroClaw:** MQTT broker for L0 sensor nodes
+- **Logging:** Level and file paths
+- **Features:** Inference, decision engine, LoRa gateway
+
+**Override in inventory:**
+
+```yaml
+picoclaw-01:
+  ansible_host: 192.168.1.100
+  picoclaw_api_key: "your-secret-key"
+  nanoclaw_enabled: true
+  nanoclaw_url: "http://192.168.1.50:8000"
+```
+
+### picoclaw.service.j2
+
+Systemd service unit file template. Includes:
+
+- Auto-restart on failure
+- Resource limits (file descriptors, processes)
+- Security hardening (NoNewPrivileges, PrivateTmp, ProtectSystem)
+- Journal logging
+
+## Inventory
+
+### hosts.yml
+
+Sample inventory with all agent layers:
+
+```yaml
+all:
+  children:
+    picoclaw_nodes:
+      hosts:
+        picoclaw-01:
+          ansible_host: 192.168.1.100
+          ansible_user: pi
+      vars:
+        picoclaw_version: "0.1.0"
+    
+    nanoclaw_nodes:
+      hosts:
+        nanoclaw-01:
+          ansible_host: 192.168.1.50
+    
+    microclaw_nodes:
+      hosts:
+        microclaw-01:
+          ansible_host: 192.168.1.200
+```
+
+**Host variables:**
+
+- `ansible_host` — IP address or hostname
+- `ansible_user` — SSH user (e.g., `pi`, `ubuntu`)
+- `ansible_become` — Use sudo (default: `yes`)
+
+## Docker Compose (Alternative)
+
+For quick local testing, use Docker Compose:
+
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f picoclaw
+
+# Stop all services
+docker-compose down
+```
+
+**Services:**
+
+- **PicoClaw:** http://localhost:8080
+- **NanoClaw:** http://localhost:8000
+- **MoltClaw:** http://localhost:3000
+
+## Architecture
+
+```
+┌───────────────────────────────────────────┐
+│  Clawland Edge AI Network                 │
+├───────────────────────────────────────────┤
+│  L0 MicroClaw (ESP32)                     │
+│    └─ Ansible flash (future)             │
+│           ↓ MQTT                          │
+│  L1 PicoClaw (Raspberry Pi 5)             │
+│    └─ Ansible deploy-picoclaw.yml        │
+│           ↓ HTTP                          │
+│  L2 NanoClaw (Raspberry Pi 4)             │
+│    └─ Ansible deploy-nanoclaw.yml        │
+│           ↓ HTTPS                         │
+│  L3 MoltClaw (Cloud)                      │
+│    └─ Ansible deploy-moltclaw.yml        │
+└───────────────────────────────────────────┘
+```
+
+## Troubleshooting
+
+### SSH Connection Failed
+
+```bash
+# Test SSH connection
+ansible -i inventory/hosts.yml picoclaw-01 -m ping
+
+# Check SSH config
+ssh -vvv pi@192.168.1.100
+```
+
+### Playbook Fails on "Download Binary"
+
+**Cause:** Pre-built binary not available for your architecture.
+
+**Solution:** Playbook automatically falls back to building from source (requires Go runtime).
+
+### Health Check Timeout
+
+```bash
+# SSH to target node
+ssh pi@192.168.1.100
+
+# Check if PicoClaw is running
+sudo systemctl status picoclaw
+
+# View logs
+sudo journalctl -u picoclaw -n 50
+
+# Test health endpoint locally
+curl -v http://localhost:8080/healthz
+```
+
+### Firewall Blocks Access
+
+```bash
+# Check UFW status
+sudo ufw status
+
+# Allow PicoClaw port
+sudo ufw allow 8080/tcp
+
+# Reload UFW
+sudo ufw reload
+```
+
+## Development
+
+### Test Playbook Locally
+
+```bash
+# Install Vagrant
+brew install vagrant  # macOS
+sudo apt install vagrant  # Linux
+
+# Create test VM
+vagrant init ubuntu/jammy64
+vagrant up
+
+# Run playbook against VM
+ansible-playbook -i "127.0.0.1:2222," playbooks/deploy-picoclaw.yml \
+  --user vagrant \
+  --private-key ~/.vagrant.d/insecure_private_key
+```
+
+### Lint Playbooks
+
+```bash
+# Install ansible-lint
+pip install ansible-lint
+
+# Lint all playbooks
+ansible-lint playbooks/*.yml
+```
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/Clawland-AI/.github/blob/main/CONTRIBUTING.md) for guidelines. Deployment improvements earn contribution points toward the quarterly [Revenue Pool](https://github.com/Clawland-AI/.github/blob/main/CONTRIBUTOR-REVENUE-SHARE.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and PR guidelines.
 
 ## License
 
-Apache 2.0 — See [LICENSE](LICENSE)
+Apache 2.0 — see [LICENSE](LICENSE) for details.
+
+## Links
+
+- **Clawland Docs:** https://docs.clawland.ai
+- **Issues:** https://github.com/Clawland-AI/clawland-deploy/issues
+- **Discussions:** https://github.com/Clawland-AI/clawland-deploy/discussions
