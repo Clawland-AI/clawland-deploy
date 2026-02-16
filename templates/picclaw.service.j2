@@ -1,14 +1,33 @@
 [Unit]
-Description=PicoClaw Edge AI Agent
-After=network.target
+Description=PicoClaw Edge Agent
+Documentation=https://github.com/Clawland-AI/picclaw
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User={{ picclaw_user }}
-ExecStart=/usr/local/bin/picclaw --port {{ picclaw_port }}
-Restart=always
-RestartSec=5
-Environment=PICCLAW_PORT={{ picclaw_port }}
+Group={{ picclaw_group }}
+WorkingDirectory={{ picclaw_install_dir }}
+ExecStart={{ picclaw_install_dir }}/picclaw --config {{ picclaw_config_dir }}/config.yaml
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ picclaw_data_dir }}
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=picclaw
 
 [Install]
 WantedBy=multi-user.target

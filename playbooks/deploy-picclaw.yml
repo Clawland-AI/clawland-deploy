@@ -1,47 +1,156 @@
 ---
+# Ansible Playbook: Deploy PicoClaw on a single node
+# Supports: ARM64 (Raspberry Pi), RISC-V, x86_64
+# Requirements: Ubuntu 22.04+ / Debian 11+
+
 - name: Deploy PicoClaw Edge Agent
-  hosts: edge_nodes
-  become: true
+  hosts: picclaw_nodes
+  become: yes
   vars:
+    # PicoClaw configuration
     picclaw_version: "0.1.0"
-    picclaw_port: 9090
-    picclaw_user: picclaw
-
+    picclaw_binary_url: "https://github.com/Clawland-AI/picclaw/releases/download/v{{ picclaw_version }}/picclaw-{{ ansible_architecture }}"
+    picclaw_install_dir: "/opt/picclaw"
+    picclaw_config_dir: "/etc/picclaw"
+    picclaw_data_dir: "/var/lib/picclaw"
+    picclaw_user: "picclaw"
+    picclaw_group: "picclaw"
+    
+    # Service configuration
+    picclaw_port: 8080
+    picclaw_enable_telegram: true
+    picclaw_telegram_token: "{{ telegram_bot_token | default('') }}"
+    
+    # Firewall rules
+    enable_firewall: true
+    allowed_ports:
+      - "{{ picclaw_port }}"
+      - 22  # SSH
+    
+    # Fleet Manager connection
+    fleet_manager_url: "https://fleet.clawland.ai"
+    node_name: "{{ inventory_hostname }}"
+    
   tasks:
-    - name: Create picclaw user
-      ansible.builtin.user:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - wget
+          - ca-certificates
+          - systemd
+          - ufw
+        state: present
+    
+    - name: Create picclaw system user
+      user:
         name: "{{ picclaw_user }}"
-        system: true
+        system: yes
+        create_home: no
         shell: /usr/sbin/nologin
-
-    - name: Download picclaw binary
-      ansible.builtin.get_url:
-        url: "https://github.com/Clawland-AI/picclaw/releases/download/v{{ picclaw_version }}/picclaw-linux-{{ ansible_architecture }}"
-        dest: /usr/local/bin/picclaw
-        mode: '0755'
-
-    - name: Create config directory
-      ansible.builtin.file:
-        path: /etc/picclaw
+        state: present
+    
+    - name: Create picclaw directories
+      file:
+        path: "{{ item }}"
         state: directory
         owner: "{{ picclaw_user }}"
+        group: "{{ picclaw_group }}"
         mode: '0755'
-
-    - name: Deploy systemd service
-      ansible.builtin.template:
-        src: templates/picclaw.service.j2
-        dest: /etc/systemd/system/picclaw.service
+      loop:
+        - "{{ picclaw_install_dir }}"
+        - "{{ picclaw_config_dir }}"
+        - "{{ picclaw_data_dir }}"
+        - "{{ picclaw_data_dir }}/logs"
+    
+    - name: Download PicoClaw binary
+      get_url:
+        url: "{{ picclaw_binary_url }}"
+        dest: "{{ picclaw_install_dir }}/picclaw"
+        mode: '0755'
+        owner: "{{ picclaw_user }}"
+        group: "{{ picclaw_group }}"
+      register: download_result
+      retries: 3
+      delay: 5
+      until: download_result is succeeded
+    
+    - name: Create PicoClaw configuration file
+      template:
+        src: ../templates/picclaw_config.yaml.j2
+        dest: "{{ picclaw_config_dir }}/config.yaml"
+        owner: "{{ picclaw_user }}"
+        group: "{{ picclaw_group }}"
+        mode: '0640'
       notify: restart picclaw
-
-    - name: Enable and start picclaw
-      ansible.builtin.systemd:
+    
+    - name: Create systemd service file
+      template:
+        src: ../templates/picclaw.service.j2
+        dest: /etc/systemd/system/picclaw.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart picclaw
+    
+    - name: Enable and start picclaw service
+      systemd:
         name: picclaw
-        enabled: true
+        enabled: yes
         state: started
-        daemon_reload: true
-
+        daemon_reload: yes
+    
+    - name: Configure UFW firewall
+      block:
+        - name: Enable UFW
+          ufw:
+            state: enabled
+            policy: deny
+          
+        - name: Allow SSH
+          ufw:
+            rule: allow
+            port: '22'
+            proto: tcp
+          
+        - name: Allow PicoClaw port
+          ufw:
+            rule: allow
+            port: "{{ picclaw_port }}"
+            proto: tcp
+          
+        - name: Reload UFW
+          ufw:
+            state: reloaded
+      when: enable_firewall | bool
+    
+    - name: Wait for PicoClaw to start
+      wait_for:
+        port: "{{ picclaw_port }}"
+        delay: 2
+        timeout: 30
+      
+    - name: Verify PicoClaw health check
+      uri:
+        url: "http://localhost:{{ picclaw_port }}/healthz"
+        return_content: yes
+      register: health_check
+      retries: 5
+      delay: 3
+      until: health_check.status == 200
+    
+    - name: Display health check result
+      debug:
+        msg: "PicoClaw is healthy: {{ health_check.json }}"
+  
   handlers:
     - name: restart picclaw
-      ansible.builtin.systemd:
+      systemd:
         name: picclaw
         state: restarted
+        daemon_reload: yes
