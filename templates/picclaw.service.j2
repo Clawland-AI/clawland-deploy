@@ -1,14 +1,25 @@
 [Unit]
 Description=PicoClaw Edge AI Agent
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
 User={{ picclaw_user }}
-ExecStart=/usr/local/bin/picclaw --port {{ picclaw_port }}
+Group={{ picclaw_group }}
+WorkingDirectory={{ picclaw_home_dir }}
+Environment=HOME={{ picclaw_home_dir }}
+Environment=PICOCLAW_CONFIG={{ picclaw_config_path }}
+Environment=PICOCLAW_EDGE_ENABLED=true
+Environment=PICOCLAW_EDGE_PORT={{ picclaw_edge_port }}
+ExecStart=/usr/local/bin/picclaw gateway
 Restart=always
 RestartSec=5
-Environment=PICCLAW_PORT={{ picclaw_port }}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+ReadWritePaths={{ picclaw_home_dir }}
 
 [Install]
 WantedBy=multi-user.target

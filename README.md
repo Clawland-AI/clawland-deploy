@@ -32,19 +32,39 @@ docker compose -f picclaw.yml up -d
 docker compose -f moltclaw.yml up -d
 ```
 
+### Single-node PicoClaw Ansible Deployment
+
+```bash
+# Install the UFW module collection once on the control host
+ansible-galaxy collection install -r collections/requirements.yml
+
+# Edit inventory with your edge node
+vim inventory/hosts.yml
+
+# Deploy PicoClaw to the edge node
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-picclaw.yml
+```
+
+Useful variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `picclaw_version` | `0.1.0` | Release tag to download |
+| `picclaw_edge_port` | `9090` | Local Edge API port and UFW allow rule |
+| `picclaw_cloud_endpoint` | `http://localhost:8080` | Upstream NanoClaw/Fleet endpoint |
+| `picclaw_cloud_token` | empty | Optional bearer token for upstream reporting |
+| `picclaw_heartbeat_seconds` | `30` | Edge reporter heartbeat interval |
+
+The playbook creates the `picclaw` system user, downloads the release binary,
+renders `/var/lib/picclaw/.picoclaw/config.json`, installs a hardened systemd
+unit, opens the Edge API port with UFW, starts the service, and verifies
+`GET /api/health`.
+
 ### Ansible (Fleet Deployment)
 
 ```bash
-cd ansible
-
-# Edit inventory with your edge nodes
-vim inventory/hosts.yml
-
-# Deploy picclaw to all edge nodes
-ansible-playbook -i inventory/hosts.yml playbooks/picclaw.yml
-
-# Deploy moltclaw cloud gateway
-ansible-playbook -i inventory/hosts.yml playbooks/moltclaw.yml
+# Reuse the same playbook for every host in the edge_nodes group.
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-picclaw.yml
 ```
 
 ### Pre-built Image (SD Card)

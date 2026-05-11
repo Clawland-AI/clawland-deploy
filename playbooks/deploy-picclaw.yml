@@ -1,47 +1,127 @@
 ---
-- name: Deploy PicoClaw Edge Agent
+- name: Deploy single-node PicoClaw Edge Agent
   hosts: edge_nodes
   become: true
   vars:
     picclaw_version: "0.1.0"
-    picclaw_port: 9090
     picclaw_user: picclaw
+    picclaw_group: picclaw
+    picclaw_edge_port: 9090
+    picclaw_home_dir: /var/lib/picclaw
+    picclaw_config_dir: /var/lib/picclaw/.picoclaw
+    picclaw_config_path: /var/lib/picclaw/.picoclaw/config.json
+    picclaw_cloud_endpoint: "http://localhost:8080"
+    picclaw_cloud_token: ""
+    picclaw_heartbeat_seconds: 30
+    picclaw_arch_map:
+      x86_64: amd64
+      aarch64: arm64
+      armv7l: armv7
+      armv6l: armv6
+      riscv64: riscv64
+    picclaw_binary_arch: "{{ picclaw_arch_map.get(ansible_architecture, ansible_architecture) }}"
+    picclaw_binary_url: "https://github.com/Clawland-AI/picclaw/releases/download/v{{ picclaw_version }}/picclaw-linux-{{ picclaw_binary_arch }}"
 
   tasks:
-    - name: Create picclaw user
+    - name: Install runtime packages
+      ansible.builtin.package:
+        name:
+          - ca-certificates
+          - curl
+          - ufw
+        state: present
+
+    - name: Create PicoClaw group
+      ansible.builtin.group:
+        name: "{{ picclaw_group }}"
+        system: true
+
+    - name: Create PicoClaw user
       ansible.builtin.user:
         name: "{{ picclaw_user }}"
+        group: "{{ picclaw_group }}"
+        home: "{{ picclaw_home_dir }}"
+        create_home: true
         system: true
         shell: /usr/sbin/nologin
 
-    - name: Download picclaw binary
-      ansible.builtin.get_url:
-        url: "https://github.com/Clawland-AI/picclaw/releases/download/v{{ picclaw_version }}/picclaw-linux-{{ ansible_architecture }}"
-        dest: /usr/local/bin/picclaw
-        mode: '0755'
-
-    - name: Create config directory
+    - name: Create PicoClaw state directory
       ansible.builtin.file:
-        path: /etc/picclaw
+        path: "{{ picclaw_home_dir }}"
         state: directory
         owner: "{{ picclaw_user }}"
-        mode: '0755'
+        group: "{{ picclaw_group }}"
+        mode: "0750"
+
+    - name: Create PicoClaw config directory
+      ansible.builtin.file:
+        path: "{{ picclaw_config_dir }}"
+        state: directory
+        owner: "{{ picclaw_user }}"
+        group: "{{ picclaw_group }}"
+        mode: "0750"
+
+    - name: Download PicoClaw binary
+      ansible.builtin.get_url:
+        url: "{{ picclaw_binary_url }}"
+        dest: /usr/local/bin/picclaw
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy PicoClaw config
+      ansible.builtin.template:
+        src: templates/picclaw.config.json.j2
+        dest: "{{ picclaw_config_path }}"
+        owner: "{{ picclaw_user }}"
+        group: "{{ picclaw_group }}"
+        mode: "0640"
+      notify: restart picclaw
 
     - name: Deploy systemd service
       ansible.builtin.template:
         src: templates/picclaw.service.j2
         dest: /etc/systemd/system/picclaw.service
+        owner: root
+        group: root
+        mode: "0644"
       notify: restart picclaw
 
-    - name: Enable and start picclaw
+    - name: Allow PicoClaw Edge API through UFW
+      community.general.ufw:
+        rule: allow
+        port: "{{ picclaw_edge_port }}"
+        proto: tcp
+
+    - name: Enable and start PicoClaw
       ansible.builtin.systemd:
         name: picclaw
         enabled: true
         state: started
         daemon_reload: true
 
+    - name: Wait for PicoClaw Edge API port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ picclaw_edge_port }}"
+        timeout: 30
+
+    - name: Verify PicoClaw health endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ picclaw_edge_port }}/api/health"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: picclaw_health
+      changed_when: false
+
+    - name: Show PicoClaw health response
+      ansible.builtin.debug:
+        var: picclaw_health.json
+
   handlers:
     - name: restart picclaw
       ansible.builtin.systemd:
         name: picclaw
         state: restarted
+        daemon_reload: true

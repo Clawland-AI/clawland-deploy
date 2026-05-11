@@ -1,0 +1,33 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "{{ picclaw_home_dir }}/workspace",
+      "model": "glm-4.7",
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "max_tool_iterations": 20
+    }
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": {{ picclaw_edge_port }}
+  },
+  "edge": {
+    "enabled": true,
+    "port": {{ picclaw_edge_port }},
+    "node_id": "{{ inventory_hostname }}",
+    "node_name": "{{ hostvars[inventory_hostname].node_name | default(inventory_hostname) }}",
+    "cloud_endpoint": "{{ picclaw_cloud_endpoint }}",
+    "cloud_token": "{{ picclaw_cloud_token }}",
+    "heartbeat_seconds": {{ picclaw_heartbeat_seconds }}
+  },
+  "providers": {},
+  "channels": {},
+  "tools": {},
+  "gene": {
+    "strategy": "balanced",
+    "auto_publish": true,
+    "min_confidence": 0.7,
+    "min_verified_by": 3
+  }
+}
