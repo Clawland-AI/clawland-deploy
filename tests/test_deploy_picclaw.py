@@ -37,6 +37,9 @@ class PicClawDeployPlaybookTests(unittest.TestCase):
         self.assertIn("community.general.ufw", self.playbook_text)
         self.assertIn("ansible.builtin.uri", self.playbook_text)
         self.assertIn("/api/health", self.playbook_text)
+        self.assertIn("meta: flush_handlers", self.playbook_text)
+        self.assertIn("../templates/picclaw.config.json.j2", self.playbook_text)
+        self.assertIn("../templates/picclaw.service.j2", self.playbook_text)
 
     def test_systemd_runs_gateway_with_config_env(self):
         self.assertIn("ExecStart=/usr/local/bin/picclaw gateway", self.service_text)
@@ -47,6 +50,13 @@ class PicClawDeployPlaybookTests(unittest.TestCase):
         self.assertIn("Single-node PicoClaw", self.readme_text)
         self.assertIn("ansible-playbook -i inventory/hosts.yml playbooks/deploy-picclaw.yml", self.readme_text)
         self.assertIn("picclaw_edge_port", self.readme_text)
+
+    def test_health_check_runs_after_handlers_flush(self):
+        flush_index = self.playbook_text.index("meta: flush_handlers")
+        wait_index = self.playbook_text.index("Wait for PicoClaw Edge API port")
+        health_index = self.playbook_text.index("Verify PicoClaw health endpoint")
+        self.assertLess(flush_index, wait_index)
+        self.assertLess(flush_index, health_index)
 
 
 if __name__ == "__main__":

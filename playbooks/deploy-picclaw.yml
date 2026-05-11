@@ -71,7 +71,7 @@
 
     - name: Deploy PicoClaw config
       ansible.builtin.template:
-        src: templates/picclaw.config.json.j2
+        src: ../templates/picclaw.config.json.j2
         dest: "{{ picclaw_config_path }}"
         owner: "{{ picclaw_user }}"
         group: "{{ picclaw_group }}"
@@ -80,7 +80,7 @@
 
     - name: Deploy systemd service
       ansible.builtin.template:
-        src: templates/picclaw.service.j2
+        src: ../templates/picclaw.service.j2
         dest: /etc/systemd/system/picclaw.service
         owner: root
         group: root
@@ -99,6 +99,9 @@
         enabled: true
         state: started
         daemon_reload: true
+
+    - name: Flush handlers before health check
+      meta: flush_handlers
 
     - name: Wait for PicoClaw Edge API port
       ansible.builtin.wait_for:
